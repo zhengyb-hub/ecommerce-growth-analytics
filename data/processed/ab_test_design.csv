@@ -1,0 +1,2 @@
+experiment,anchor_date,target_definition,eligible_customers,observed_30d_reactivation_rate,minimum_detectable_effect_abs,target_30d_reactivation_rate,sample_size_per_variant,primary_metric,guardrail_metric
+At-risk customer coupon win-back,2011-09-10,Customers inactive 60-180 days before anchor date,1293,0.2374323279195669,0.04748646558391337,0.28491879350348026,1343,30-day reactivation rate,Revenue per treated customer after discount

@@ -1,0 +1,11 @@
+__pycache__/
+.ipynb_checkpoints/
+
+data/raw/*
+!data/raw/.gitkeep
+
+data/processed/transactions_clean.csv
+data/processed/growth_analytics.sqlite
+data/processed/rfm_customers.csv
+
+*.pyc

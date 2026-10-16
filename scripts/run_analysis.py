@@ -9,6 +9,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from scipy.stats import norm
+from build_dashboard import build_dashboard
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -249,7 +250,7 @@ def product_performance(transactions: pd.DataFrame) -> pd.DataFrame:
 
 
 def growth_scenarios(monthly: pd.DataFrame, rfm_segments: pd.DataFrame, overview: pd.DataFrame) -> pd.DataFrame:
-    latest_months = monthly.sort_values("order_month").tail(3)
+    latest_months = complete_months(monthly, pd.Timestamp(overview.loc[0, "date_end"])).tail(3)
     baseline_revenue = latest_months["revenue"].sum()
     returning_revenue = latest_months["returning_revenue"].sum()
     avg_order_value = float(overview.loc[0, "avg_order_value"])
@@ -269,7 +270,7 @@ def growth_scenarios(monthly: pd.DataFrame, rfm_segments: pd.DataFrame, overview
                 "estimated_revenue_uplift": reactivation_pool * 0.10 * avg_order_value,
             },
             {
-                "scenario": "Increase AOV by 3% in the latest 3 months",
+                "scenario": "Increase AOV by 3% in the latest 3 complete months",
                 "baseline": baseline_revenue,
                 "assumption": "Bundling and merchandising raise average order value.",
                 "estimated_revenue_uplift": baseline_revenue * 0.03,
@@ -285,6 +286,14 @@ def growth_scenarios(monthly: pd.DataFrame, rfm_segments: pd.DataFrame, overview
     return scenarios
 
 
+def complete_months(monthly: pd.DataFrame, last_observation: pd.Timestamp) -> pd.DataFrame:
+    """Exclude the final calendar month when the source ends before month end."""
+    result = monthly.sort_values("order_month")
+    if last_observation.normalize() < last_observation.to_period("M").end_time.normalize():
+        result = result.loc[result["order_month"] < last_observation.to_period("M").start_time]
+    return result
+
+
 def sample_size_two_proportions(p1: float, p2: float, alpha: float = 0.05, power: float = 0.80) -> int:
     if p2 <= p1:
         raise ValueError("p2 must be greater than p1")
@@ -296,6 +305,23 @@ def sample_size_two_proportions(p1: float, p2: float, alpha: float = 0.05, power
         + z_beta * math.sqrt(p1 * (1 - p1) + p2 * (1 - p2))
     ) ** 2
     return int(math.ceil(numerator / ((p2 - p1) ** 2)))
+
+
+def feasible_mde(p1: float, eligible: int, alpha: float = 0.05, power: float = 0.80) -> float:
+    """Smallest absolute uplift detectable with an equal split of the available pool."""
+    per_arm = eligible // 2
+    if per_arm < 2:
+        raise ValueError("At least four eligible customers are required")
+    low, high = 0.0, 1.0 - p1
+    if sample_size_two_proportions(p1, p1 + high, alpha, power) > per_arm:
+        raise ValueError("Eligible pool is too small for this power specification")
+    for _ in range(60):
+        mid = (low + high) / 2
+        if sample_size_two_proportions(p1, p1 + mid, alpha, power) <= per_arm:
+            high = mid
+        else:
+            low = mid
+    return high
 
 
 def ab_test_design(orders: pd.DataFrame) -> pd.DataFrame:
@@ -322,6 +348,7 @@ def ab_test_design(orders: pd.DataFrame) -> pd.DataFrame:
     mde_abs = max(0.02, baseline_for_power * 0.20)
     target_rate = min(baseline_for_power + mde_abs, 0.95)
     sample_size = sample_size_two_proportions(baseline_for_power, target_rate)
+    feasible_effect = feasible_mde(baseline_for_power, eligible_count)
 
     return pd.DataFrame(
         [
@@ -334,6 +361,10 @@ def ab_test_design(orders: pd.DataFrame) -> pd.DataFrame:
                 "minimum_detectable_effect_abs": target_rate - baseline_for_power,
                 "target_30d_reactivation_rate": target_rate,
                 "sample_size_per_variant": sample_size,
+                "available_per_variant": eligible_count // 2,
+                "required_total_sample": sample_size * 2,
+                "sample_feasible": sample_size * 2 <= eligible_count,
+                "feasible_mde_abs": feasible_effect,
                 "primary_metric": "30-day reactivation rate",
                 "guardrail_metric": "Revenue per treated customer after discount",
             }
@@ -540,7 +571,7 @@ def create_reports(
     top_country = country.iloc[0]
     top_product = products.iloc[0]
     best_scenario = scenarios.sort_values("estimated_revenue_uplift", ascending=False).iloc[0]
-    latest_month = monthly.sort_values("order_month").iloc[-1]
+    latest_month = complete_months(monthly, pd.Timestamp(metrics["date_end"])).iloc[-1]
     month_1_retention = weighted_retention(retention, 1)
     month_3_retention = weighted_retention(retention, 3)
     ab = ab_test.iloc[0]
@@ -566,10 +597,12 @@ The analysis uses UCI Online Retail II, a two-year transactional dataset from a 
 
 ## Growth Recommendations
 
-1. Launch a win-back campaign for At Risk and Hibernating customers. The largest scenario is "{best_scenario['scenario']}", estimated at {money(float(best_scenario['estimated_revenue_uplift']))}.
+1. Pilot a consent-compliant win-back campaign for At Risk and Hibernating customers after resolving experiment feasibility. The largest modeled scenario is "{best_scenario['scenario']}", estimated at {money(float(best_scenario['estimated_revenue_uplift']))}; this is not realized revenue.
 2. Build a first-90-day lifecycle program because early cohort retention drops quickly after the first purchase.
 3. Use product bundles and merchandising around top SKUs to lift average order value without relying only on discounts.
 4. Treat country strategy separately: protect the core UK base while testing localized offers in smaller high-AOV markets.
+
+These directional scenarios may overlap and exclude campaign and product costs; do not add their uplifts together as a forecast.
 
 ## Experiment Design
 
@@ -579,9 +612,9 @@ Recommended test: {ab['experiment']}.
 - Baseline 30-day reactivation: {pct(float(ab['observed_30d_reactivation_rate']))}.
 - Primary metric: {ab['primary_metric']}.
 - Guardrail: {ab['guardrail_metric']}.
-- Minimum sample size: {int(ab['sample_size_per_variant']):,} customers per variant for 80% power at alpha 0.05.
+- The original uplift assumption needs {int(ab['sample_size_per_variant']):,} per arm, exceeding the {int(ab['eligible_customers']):,}-customer historical pool. A feasible equal split has {int(ab['available_per_variant']):,} per arm and can detect roughly {pct(float(ab['feasible_mde_abs']))} absolute uplift at 80% power (normal approximation). Do not claim this historical design is launch-ready.
 
-## Latest Month Snapshot
+## Latest Complete Month Snapshot
 
 - Month: {latest_month['order_month'].strftime('%Y-%m')}.
 - Revenue: {money(float(latest_month['revenue']))}.
@@ -594,7 +627,7 @@ Recommended test: {ab['experiment']}.
 Use one of these on your resume or LinkedIn project section.
 
 - Built an end-to-end growth analytics project on {transaction_line_count:,} clean e-commerce line items and {int(metrics['total_orders']):,} orders, using Python and SQL to analyze cohort retention, RFM segmentation, repeat purchase behavior, and revenue drivers.
-- Developed a customer lifecycle dashboard covering {int(metrics['total_customers']):,} customers and {money(float(metrics['total_revenue']))} in clean revenue; identified retention and win-back opportunities sized at up to {money(float(best_scenario['estimated_revenue_uplift']))}.
+- Developed a customer lifecycle dashboard covering {int(metrics['total_customers']):,} customers and {money(float(metrics['total_revenue']))} in clean revenue; modeled a directional returning-revenue opportunity of {money(float(best_scenario['estimated_revenue_uplift']))} under explicit assumptions.
 - Designed an A/B test for an at-risk customer coupon campaign, defining target population, primary and guardrail metrics, baseline reactivation, MDE, and required sample size.
 
 Short version:
@@ -628,10 +661,14 @@ Offering a targeted coupon to at-risk customers will increase 30-day reactivatio
 - Target rate: {pct(float(ab['target_30d_reactivation_rate']))}.
 - Minimum detectable effect: {pct(float(ab['minimum_detectable_effect_abs']))} absolute.
 - Sample size: {int(ab['sample_size_per_variant']):,} customers per variant.
+- Available with an equal split: {int(ab['available_per_variant']):,} per variant.
+- Feasibility: original effect assumption is {'feasible' if ab['sample_feasible'] else 'not feasible'} with the historical pool.
+- Approximate detectable effect with the available pool: {pct(float(ab['feasible_mde_abs']))} absolute (target {pct(float(ab['observed_30d_reactivation_rate'] + ab['feasible_mde_abs']))}).
+- If the smaller effect matters, expand recruitment or run across additional independent eligible cohorts; do not count repeated exposure of the same customer as new participants.
 
 ## Decision Rule
 
-Ship the campaign if the treatment improves 30-day reactivation with statistical significance and does not reduce revenue per treated customer after discount.
+Use an intention-to-treat analysis with a two-sided 5% test and report confidence intervals. Consider launch only if reactivation improves and revenue per assigned customer after discount does not decline. Net contribution margin is the preferred guardrail, but product cost and campaign cost are not in this dataset, so margin cannot be evaluated here. Check balance, exclusions, and sample-ratio mismatch before interpreting results. This is a design, not a completed experiment.
 """
 
     (REPORTS_DIR / "executive_summary.md").write_text(summary, encoding="utf-8")
@@ -657,7 +694,7 @@ def main() -> None:
     ab_test = ab_test_design(orders)
 
     write_csv_outputs(overview, monthly, retention, rfm, segment_summary, country, products, scenarios, ab_test)
-    create_dashboard(overview, monthly, retention_matrix, segment_summary, country, scenarios)
+    build_dashboard()
     create_reports(len(transactions), overview, monthly, retention, segment_summary, country, products, scenarios, ab_test)
 
     print("Analysis complete.")

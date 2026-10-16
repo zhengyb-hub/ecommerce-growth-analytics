@@ -1,4 +1,4 @@
 scenario,baseline,assumption,estimated_revenue_uplift
 Win back 10% of at-risk and hibernating customers,2352.0,Each reactivated customer places one average order.,112885.24284307394
-Increase AOV by 3% in the latest 3 months,2719346.96,Bundling and merchandising raise average order value.,81580.40879999999
-Increase returning-customer revenue by 5%,2505514.99,Lifecycle messaging improves repeat-purchase intensity.,125275.74950000002
+Increase AOV by 3% in the latest 3 complete months,3153974.552,Bundling and merchandising raise average order value.,94619.23656
+Increase returning-customer revenue by 5%,2867468.432,Lifecycle messaging improves repeat-purchase intensity.,143373.4216

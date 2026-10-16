@@ -24,7 +24,11 @@ Customers inactive 60-180 days before anchor date as of 2011-09-10.
 - Target rate: 28.5%.
 - Minimum detectable effect: 4.7% absolute.
 - Sample size: 1,343 customers per variant.
+- Available with an equal split: 646 per variant.
+- Feasibility: original effect assumption is not feasible with the historical pool.
+- Approximate detectable effect with the available pool: 6.9% absolute (target 30.7%).
+- If the smaller effect matters, expand recruitment or run across additional independent eligible cohorts; do not count repeated exposure of the same customer as new participants.
 
 ## Decision Rule
 
-Ship the campaign if the treatment improves 30-day reactivation with statistical significance and does not reduce revenue per treated customer after discount.
+Use an intention-to-treat analysis with a two-sided 5% test and report confidence intervals. Consider launch only if reactivation improves and revenue per assigned customer after discount does not decline. Net contribution margin is the preferred guardrail, but product cost and campaign cost are not in this dataset, so margin cannot be evaluated here. Check balance, exclusions, and sample-ratio mismatch before interpreting results. This is a design, not a completed experiment.

@@ -10,6 +10,7 @@ This project analyzes a two-year e-commerce transaction dataset to diagnose reve
 - GitHub Pages entry file: [docs/index.html](docs/index.html)
 - Executive summary: [reports/executive_summary.md](reports/executive_summary.md)
 - A/B test plan: [reports/ab_test_plan.md](reports/ab_test_plan.md)
+- Lifecycle activation playbook: [reports/activation_playbook.md](reports/activation_playbook.md)
 - Resume bullets: [reports/resume_bullets.md](reports/resume_bullets.md)
 
 GitHub shows HTML files as source code by default. To view the dashboard as a real web page, enable GitHub Pages:
@@ -31,7 +32,18 @@ https://zhengyb-hub.github.io/ecommerce-growth-analytics/
 - Month-1 weighted cohort retention: 23.1%.
 - Highest-value RFM segment: Champions, contributing 68.1% of clean revenue.
 - Largest market: United Kingdom, contributing 83.0% of clean revenue.
-- Largest modeled growth opportunity: returning-customer revenue lift, estimated at GBP 125K.
+- Largest modeled growth opportunity: returning-customer revenue lift, estimated at GBP 143K using the last three **complete** months (September–November 2011).
+
+## Decision Dashboard
+
+The standalone dashboard works offline and is generated from the committed aggregate CSVs. It includes:
+
+- A complete-month revenue/customer trend filter and cohort-retention heatmap.
+- Clickable RFM segment selection with observed segment metrics, a campaign hypothesis, and illustrative email/short-video copy.
+- Market concentration chart and adjustable win-back, AOV, and returning-revenue what-if sliders.
+- A sample-size feasibility check for the historical win-back test.
+
+The source ends on 2011-12-09, so December is **partial**: it remains in all-time clean revenue but is excluded from comparable monthly trends, cohort heatmap observation windows, and the three-month scenario baseline. Modeled revenue is not realized uplift; overlapping scenarios cannot be added together. No campaign or A/B experiment was launched on this historical dataset.
 
 ## Business Objective
 
@@ -104,6 +116,14 @@ Run the growth analysis and generate reports:
 ```bash
 python scripts/run_analysis.py
 ```
+
+If the UCI workbook is unavailable, regenerate only the dashboard and corrected derivative outputs from the committed aggregate CSVs:
+
+```bash
+python scripts/refresh_cached_outputs.py
+```
+
+This cached path cannot independently revalidate transaction cleaning or customer-level eligibility. Use the full pipeline for that. Run the automated tests with `python -m unittest discover -s tests -v`.
 
 ## Methods
 
